@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>갈틱폰 - 카카오톡 단톡방 버전</title>
+  <style>
+    :root {
+      --kakao-yellow: #fee500;
+      --kakao-brown: #3a1d1d;
+      --chat-bg: #b2c7da;
+      --card-bg: #ffffff;
+      --text-main: #000000;
+      --subtext: #666666;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      background: #222; color: var(--text-main);
+      display: flex; justify-content: center; align-items: center;
+      min-height: 100vh;
+    }
+    
+    /* 스마트폰/카톡 프레임 */
+    .phone-app {
+      width: 100%; max-width: 420px; height: 90vh; max-height: 800px;
+      background: var(--chat-bg); border-radius: 20px;
+      display: flex; flex-direction: column; position: relative;
+      overflow: hidden; box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    }
+
+    /* 카톡 상단 헤더 */
+    .kakao-header {
+      background: #a0b1c2; padding: 14px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-weight: bold; font-size: 16px; color: var(--kakao-brown);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 10;
+    }
+    .status-badge {
+      background: var(--kakao-yellow); color: var(--kakao-brown);
+      padding: 4px 10px; border-radius: 12px; font-size: 12px;
+    }
+
+    /* 채팅 영역 */
+    .chat-body {
+      flex: 1; padding: 16px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    /* 카톡 말풍선 컴포넌트 */
+    .chat-item { display: flex; gap: 8px; margin-bottom: 4px; }
+    .chat-avatar {
+      width: 40px; height: 40px; border-radius: 15px;
+      background: #ffe812; color: var(--kakao-brown); display: flex;
+      align-items: center; justify-content: center; font-weight: bold; font-size: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .chat-content { flex: 1; }
+    .chat-name { font-size: 12px; color: #425c73; margin-bottom: 4px; font-weight: 600; }
+    .chat-bubble {
+      background: var(--card-bg); padding: 10px 14px; border-radius: 14px;
+      display: inline-block; font-size: 14px; line-height: 1.4;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15); max-width: 85%; position: relative;
+    }
+    .chat-bubble.yellow { background: var(--kakao-yellow); color: var(--kakao-brown); }
+
+    /* 로비 및 입력 폼 카드 */
+    .card-panel {
+      background: var(--card-bg); border-radius: 16px; padding: 20px;
+      margin: auto 0; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    input[type="text"], button {
+      width: 100%; padding: 12px; margin: 6px 0;
+      border-radius: 8px; border: 1px solid #ddd; font-size: 15px; box-sizing: border-box;
+    }
+    input[type="text"] { background: #f5f5f5; text-align: center; }
+    button {
+      background: var(--kakao-yellow); color: var(--kakao-brown);
+      font-weight: bold; border: none; cursor: pointer; transition: 0.2s;
+    }
+    button:hover { filter: brightness(0.95); }
+
+    /* 타이머 바 */
+    .timer-bar {
+      background: #ff4757; color: white; text-align: center;
+      padding: 6px; font-weight: bold; font-size: 14px;
+    }
+
+    /* 캔버스 및 그리기 도구 */
+    canvas {
+      background: white; border-radius: 10px; touch-action: none;
+      cursor: crosshair; border: 1px solid #eee; margin: 6px 0;
+    }
+    .tools { display: flex; gap: 6px; justify-content: center; align-items: center; margin-bottom: 6px; }
+    .color-btn {
+      width: 24px; height: 24px; border-radius: 50%;
+      border: 2px solid white; cursor: pointer; display: inline-block;
+    }
+    .color-btn.active { transform: scale(1.2); border-color: var(--kakao-brown); }
+
+    #bgmBtn {
+      background: transparent; border: 1px solid var(--kakao-brown);
+      color: var(--kakao-brown); padding: 4px 8px; font-size: 12px; width: auto; border-radius: 12px;
+    }
+  </style>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <div class="phone-app">
+    <!-- 헤더 -->
+    <div class="kakao-header">
+      <span>💬 갈틱폰 단톡방</span>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="status-badge" id="completionBadge" style="display:none;">완료 0/2명</span>
+        <button id="bgmBtn" onclick="toggleBGM()">🎵 BGM</button>
+      </div>
+    </div>
+
+    <!-- 1. 대기실 모드 -->
+    <div class="chat-body" id="screenLobby">
+      <div class="card-panel">
+        <h2 style="color:var(--kakao-brown); margin-top:0;">💛 갈틱폰 입장</h2>
+        <p style="color:var(--subtext); font-size:13px;">닉네임을 입력하고 친구들과 연결하세요!</p>
+        <input type="text" id="nickname" placeholder="내 닉네임 입력" />
+        <button onclick="createRoom()">방 생성하기 (호스트)</button>
+        <hr style="border-color:#eee; margin:12px 0;">
+        <input type="text" id="roomInput" placeholder="4자리 방 코드 입력" style="text-transform:uppercase;" />
+        <button style="background:#e0e0e0; color:#333;" onclick="joinRoom()">방 참가하기</button>
+      </div>
+    </div>
+
+    <!-- 2. 준비 대기실 -->
+    <div class="chat-body" id="screenRoom" style="display:none;">
+      <div class="card-panel">
+        <h3>📢 대기실 코드</h3>
+        <div style="font-size: 28px; font-weight: bold; color: var(--kakao-brown);" id="roomCodeText">----</div>
+        <div id="qrContainer" style="background:white; padding:10px; display:inline-block; border-radius:12px; margin:12px 0;"></div>
+        <p style="font-size:13px; color:#666;">모든 사람이 준비 완료를 누르면 시작됩니다.</p>
+        <button id="btnReady" onclick="toggleReady()">준비 완료</button>
+      </div>
+    </div>
+
+    <!-- 3. 게임 진행 (실시간 카운트 & 편집하기) -->
+    <div style="display:none; flex-direction:column; flex:1;" id="screenGame">
+      <div class="timer-bar">⏳ 남은 시간: <span id="timerText">90</span>초</div>
+      <div class="chat-body">
+        
+        <div class="chat-item">
+          <div class="chat-avatar">🤖</div>
+          <div class="chat-content">
+            <div class="chat-name">갈틱봇</div>
+            <div class="chat-bubble" id="phaseTitle">제시어를 입력해주세요!</div>
+          </div>
+        </div>
+
+        <div class="card-panel" style="margin-top:auto;">
+          <div id="promptArea">
+            <input type="text" id="inputPrompt" placeholder="예: 우주에서 서핑하는 고양이" />
+          </div>
+
+          <div id="drawArea" style="display:none;">
+            <div class="tools">
+              <div class="color-btn active" style="background:black;" onclick="setColor('black', this)"></div>
+              <div class="color-btn" style="background:#ff4757;" onclick="setColor('#ff4757', this)"></div>
+              <div class="color-btn" style="background:#2ed573;" onclick="setColor('#2ed573', this)"></div>
+              <div class="color-btn" style="background:#1e90ff;" onclick="setColor('#1e90ff', this)"></div>
+              <div class="color-btn" style="background:#ffa502;" onclick="setColor('#ffa502', this)"></div>
+              <button style="width:auto; padding:2px 8px; font-size:12px;" onclick="clearCanvas()">지우기</button>
+            </div>
+            <canvas id="canvas" width="280" height="200"></canvas>
+          </div>
+
+          <button id="btnSubmit" onclick="submitTurn()">완료</button>
+          <button id="btnEdit" style="display:none; background:#ffa502; color:#fff;" onclick="editTurn()">✏️ 편집하기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 결과 카톡 대화방 (5배속 타임랩스) -->
+    <div class="chat-body" id="screenStory" style="display:none;">
+      
+      <!-- 제시어 카드 -->
+      <div class="chat-item">
+        <div class="chat-avatar" id="avatar1">A</div>
+        <div class="chat-content">
+          <div class="chat-name" id="name1">플레이어A</div>
+          <div class="chat-bubble yellow" id="textTopic">"..."</div>
+        </div>
+      </div>
+
+      <!-- 5배속 타임랩스 그림 카드 -->
+      <div class="chat-item">
+        <div class="chat-avatar" id="avatar2">B</div>
+        <div class="chat-content">
+          <div class="chat-name" id="name2">플레이어B</div>
+          <div class="chat-bubble" style="padding:6px;">
+            <canvas id="replayCanvas" width="260" height="190"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 정답 추측 카드 -->
+      <div class="chat-item">
+        <div class="chat-avatar" id="avatar3">C</div>
+        <div class="chat-content">
+          <div class="chat-name" id="name3">플레이어C</div>
+          <div class="chat-bubble yellow" id="textGuess">"..."</div>
+        </div>
+      </div>
+
+      <button onclick="resetToRoom()" style="margin-top:auto;">🔄 같은 멤버로 다시하기</button>
+    </div>
+  </div>
+
+  <script>
+    let peer = null, conn = null;
+    let myName = "", myRole = "host";
+    let isReady = false, isFinished = false;
+    let finishedCount = 0, totalPlayers = 2;
+    let currentStep = 1, timerVal = 90, timerInterval = null;
+
+    let canvas, ctx, drawing = false, currentColor = 'black';
+    let strokeHistory = [];
+
+    let audioCtx = null, isBgmPlaying = false, bgmTimer = null;
+
+    function initAudio() {
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    function playSynthNote(freq, type, duration, time) {
+      if(!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, time);
+      gain.gain.setValueAtTime(0.06, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(time); osc.stop(time + duration);
+    }
+
+    function startArcadeBGM() {
+      initAudio();
+      if(audioCtx.state === 'suspended') audioCtx.resume();
+      const notes = [261.63, 329.63, 392.00, 523.25, 440.00, 349.23, 392.00, 293.66];
+      let step = 0;
+      function loop() {
+        if(!isBgmPlaying) return;
+        const now = audioCtx.currentTime;
+        playSynthNote(notes[step % notes.length], 'square', 0.12, now);
+        if(step % 2 === 0) playSynthNote(130.81, 'sawtooth', 0.18, now);
+        step++; bgmTimer = setTimeout(loop, 180);
+      }
+      isBgmPlaying = true; loop();
+    }
+
+    function toggleBGM() {
+      if(isBgmPlaying) {
+        isBgmPlaying = false; clearTimeout(bgmTimer);
+        document.getElementById('bgmBtn').innerText = '🎵 BGM';
+      } else {
+        startArcadeBGM();
+        document.getElementById('bgmBtn').innerText = '🔊 BGM';
+      }
+    }
+
+    function createRoom() {
+      myName = document.getElementById('nickname').value.trim();
+      if(!myName) return alert('닉네임을 입력하세요!');
+      myRole = "host";
+
+      const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+      peer = new Peer("GARTIC-" + code);
+
+      peer.on('open', () => {
+        document.getElementById('screenLobby').style.display = 'none';
+        document.getElementById('screenRoom').style.display = 'flex';
+        document.getElementById('roomCodeText').innerText = code;
+        document.getElementById('qrContainer').innerHTML = "";
+        new QRCode(document.getElementById('qrContainer'), {
+          text: window.location.href.split('?')[0] + "?room=" + code,
+          width: 130, height: 130
+        });
+      });
+
+      peer.on('connection', (c) => {
+        conn = c;
+        conn.on('data', handleData);
+      });
+    }
+
+    function joinRoom() {
+      myName = document.getElementById('nickname').value.trim();
+      const code = document.getElementById('roomInput').value.trim().toUpperCase();
+      if(!myName || !code) return alert('닉네임과 방 코드를 입력하세요!');
+      myRole = "guest";
+
+      peer = new Peer();
+      peer.on('open', () => {
+        conn = peer.connect("GARTIC-" + code);
+        conn.on('open', () => {
+          document.getElementById('screenLobby').style.display = 'none';
+          document.getElementById('screenRoom').style.display = 'flex';
+          document.getElementById('roomCodeText').innerText = code;
+          conn.on('data', handleData);
+        });
+      });
+    }
+
+    function toggleReady() {
+      isReady = !isReady;
+      const btn = document.getElementById('btnReady');
+      btn.innerText = isReady ? "준비 취소" : "준비 완료";
+      btn.style.background = isReady ? "#ff4757" : "var(--kakao-yellow)";
+      btn.style.color = isReady ? "#fff" : "var(--kakao-brown)";
+      
+      if(conn) conn.send({ type: 'READY_CHANGE', ready: isReady });
+      checkAllReady();
+    }
+
+    function checkAllReady() {
+      if(isReady) startGame();
+    }
+
+    function handleData(data) {
+      if(data.type === 'SYNC_FINISH') {
+        finishedCount = data.count;
+        updateBadge();
+        if(finishedCount >= totalPlayers) nextPhaseAll();
+      }
+    }
+
+    function updateBadge() {
+      const badge = document.getElementById('completionBadge');
+      badge.style.display = 'inline-block';
+      badge.innerText = `완료 ${finishedCount}/${totalPlayers}명`;
+    }
+
+    function startGame() {
+      document.getElementById('screenRoom').style.display = 'none';
+      document.getElementById('screenGame').style.display = 'flex';
+      if(!isBgmPlaying) toggleBGM();
+      startTimer();
+      initCanvas();
+      updateBadge();
+    }
+
+    function startTimer() {
+      timerVal = 90;
+      document.getElementById('timerText').innerText = timerVal;
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        timerVal--;
+        document.getElementById('timerText').innerText = timerVal;
+        if(timerVal <= 0) {
+          clearInterval(timerInterval);
+          if(!isFinished) submitTurn();
+        }
+      }, 1000);
+    }
+
+    function submitTurn() {
+      isFinished = true;
+      finishedCount++;
+      updateBadge();
+
+      document.getElementById('btnSubmit').style.display = 'none';
+      document.getElementById('btnEdit').style.display = 'block';
+
+      if(conn) conn.send({ type: 'SYNC_FINISH', count: finishedCount });
+      if(finishedCount >= totalPlayers) nextPhaseAll();
+    }
+
+    function editTurn() {
+      isFinished = false;
+      finishedCount = Math.max(0, finishedCount - 1);
+      updateBadge();
+
+      document.getElementById('btnSubmit').style.display = 'block';
+      document.getElementById('btnEdit').style.display = 'none';
+
+      if(conn) conn.send({ type: 'SYNC_FINISH', count: finishedCount });
+    }
+
+    function nextPhaseAll() {
+      clearInterval(timerInterval);
+      finishedCount = 0;
+      isFinished = false;
+      document.getElementById('btnSubmit').style.display = 'block';
+      document.getElementById('btnEdit').style.display = 'none';
+
+      if(currentStep === 1) {
+        currentStep = 2;
+        document.getElementById('phaseTitle').innerText = "제시어를 보고 그림을 그려주세요!";
+        document.getElementById('promptArea').style.display = 'none';
+        document.getElementById('drawArea').style.display = 'block';
+        startTimer();
+        updateBadge();
+      } else {
+        document.getElementById('screenGame').style.display = 'none';
+        document.getElementById('screenStory').style.display = 'flex';
+        showStoryResult();
+      }
+    }
+
+    function initCanvas() {
+      canvas = document.getElementById('canvas');
+      ctx = canvas.getContext('2d');
+      ctx.lineWidth = 4; ctx.lineCap = 'round';
+
+      function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
+      }
+
+      function start(e) {
+        if(isFinished) return;
+        drawing = true;
+        const pos = getPos(e);
+        ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+        strokeHistory.push({ x: pos.x, y: pos.y, color: currentColor, isNewStroke: true });
+      }
+
+      function move(e) {
+        if(!drawing || isFinished) return;
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.strokeStyle = currentColor; ctx.stroke();
+        strokeHistory.push({ x: pos.x, y: pos.y, color: currentColor, isNewStroke: false });
+      }
+
+      function stop() { drawing = false; }
+
+      canvas.addEventListener('mousedown', start);
+      canvas.addEventListener('mousemove', move);
+      canvas.addEventListener('mouseup', stop);
+      canvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(e); });
+      canvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e); });
+      canvas.addEventListener('touchend', stop);
+    }
+
+    function setColor(color, el) {
+      currentColor = color;
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    function clearCanvas() {
+      if(isFinished) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      strokeHistory = [];
+    }
+
+    function showStoryResult() {
+      const promptVal = document.getElementById('inputPrompt').value.trim() || '우주를 나는 고양이';
+
+      document.getElementById('name1').innerText = myName;
+      document.getElementById('avatar1').innerText = myName.charAt(0);
+      document.getElementById('textTopic').innerText = `"${promptVal}"`;
+
+      document.getElementById('name2').innerText = "친구 (그림)";
+      document.getElementById('avatar2').innerText = "친";
+
+      document.getElementById('name3').innerText = "친구 (정답)";
+      document.getElementById('avatar3').innerText = "친";
+      document.getElementById('textGuess').innerText = '"날개 달린 야옹이"';
+
+      replayDrawing5x();
+    }
+
+    /* 5배속 타임랩스 렌더링 */
+    function replayDrawing5x() {
+      const repCvs = document.getElementById('replayCanvas');
+      const repCtx = repCvs.getContext('2d');
+      repCtx.clearRect(0, 0, repCvs.width, repCvs.height);
+      repCtx.lineWidth = 4; repCtx.lineCap = 'round';
+
+      if(strokeHistory.length === 0) {
+        repCtx.strokeStyle = '#ff4757';
+        repCtx.beginPath(); repCtx.arc(130, 95, 45, 0, Math.PI * 2); repCtx.stroke();
+        return;
+      }
+
+      let idx = 0;
+      const speed = 5; // 5배속
+      const interval = setInterval(() => {
+        for(let i = 0; i < speed; i++) {
+          if(idx >= strokeHistory.length) {
+            clearInterval(interval);
+            break;
+          }
+          const pt = strokeHistory[idx];
+          if(pt.isNewStroke) {
+            repCtx.beginPath(); repCtx.moveTo(pt.x, pt.y);
+          } else {
+            repCtx.strokeStyle = pt.color;
+            repCtx.lineTo(pt.x, pt.y); repCtx.stroke();
+          }
+          idx++;
+        }
+      }, 16);
+    }
+
+    function resetToRoom() {
+      currentStep = 1; strokeHistory = []; isReady = false; isFinished = false;
+      document.getElementById('btnReady').innerText = "준비 완료";
+      document.getElementById('btnReady').style.background = "var(--kakao-yellow)";
+      document.getElementById('btnReady').style.color = "var(--kakao-brown)";
+      document.getElementById('screenStory').style.display = 'none';
+      document.getElementById('screenRoom').style.display = 'flex';
+      document.getElementById('promptArea').style.display = 'block';
+      document.getElementById('drawArea').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
